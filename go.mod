@@ -7,6 +7,8 @@ require (
 	github.com/dwrtz/mcp-go v0.0.0-20250127043056-8b3b8ad3f97a
 )
 
+replace github.com/dwrtz/mcp-go => /Users/dwurtz/proj/mcp-go
+
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect

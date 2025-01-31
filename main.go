@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -359,29 +358,29 @@ func (sm *SessionManager) RunScreen(ctx context.Context, in RunScreenInput) (*ty
 // main()
 // ---------------------------------------------------------------------
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
+	lg := logger.NewStderrLogger("MCPTERM-SERVER")
 
 	sm := NewSessionManager()
 
 	runTool := types.NewTool[RunInput](
 		"run",
-		"Execute a command in the same bash session, wait for marker",
+		"Execute a command in the same bash session.",
 		sm.Run,
 	)
 	runScreenTool := types.NewTool[RunScreenInput](
 		"runScreen",
-		"Send input to the bash session, read partial output",
+		"Send input to the bash session, read partial output. Useful for TUI apps.",
 		sm.RunScreen,
 	)
 
 	srv := server.NewDefaultServer(
-		server.WithLogger(logger.NewStderrLogger("MCPTERM-SERVER")),
+		server.WithLogger(lg),
 		server.WithTools(runTool, runScreenTool),
 	)
 
 	ctx := context.Background()
 	if err := srv.Start(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Server start error: %v\n", err)
+		lg.Logf("Server start error: %v\n", err)
 		os.Exit(1)
 	}
 
