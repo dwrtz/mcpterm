@@ -1,0 +1,37 @@
+# Sink Configuration File
+
+# Output settings
+output: mcpterm.md  # Output file path
+
+# File filtering
+filter-patterns:
+  - "*.go"
+exclude-patterns:
+  - "mcp-go.md"
+case-sensitive: false
+
+# Processing options
+no-codeblock: false
+line-numbers: false
+strip-comments: false
+
+# Token settings
+show-tokens: true
+token-encoding: cl100k_base
+
+# Price estimation
+show-price: false
+provider: openai
+model: gpt-3.5-turbo
+output-tokens: 1000
+
+# Syntax highlighting mappings
+syntax-map:
+  ".jsx": "javascript"
+  ".tsx": "typescript"
+  ".mjs": "javascript"
+  ".cjs": "javascript"
+  ".md": "markdown"
+
+# Template settings
+template-path: "sink.tmpl"  # Path to custom template file
