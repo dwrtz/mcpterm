@@ -52,13 +52,6 @@ func filterOutCommandLines(output, cmd string) string {
 }
 
 // ---------------------------------------------------------------------
-// Utility: synchronousDiscardLeftover => no-op
-// ---------------------------------------------------------------------
-func synchronousDiscardLeftover(_ *os.File, _ time.Duration) {
-	log.Printf("[DEBUG] synchronousDiscardLeftover: no-op (disabled)")
-}
-
-// ---------------------------------------------------------------------
 // Session => background reading from PTY
 // ---------------------------------------------------------------------
 type Session struct {
@@ -79,13 +72,6 @@ func (s *Session) Close() error {
 		return nil
 	}
 	s.closed = true
-
-	log.Printf("[DEBUG] Session.Close: killing session for PID=%d", func() int {
-		if s.cmd != nil && s.cmd.Process != nil {
-			return s.cmd.Process.Pid
-		}
-		return -1
-	}())
 
 	var errs []error
 	if s.ptmx != nil {
@@ -111,21 +97,12 @@ func (s *Session) Close() error {
 
 // Continuously read from the PTY, appending to s.buf
 func (s *Session) readerLoop() {
-	pid := -1
-	if s.cmd != nil && s.cmd.Process != nil {
-		pid = s.cmd.Process.Pid
-	}
-	log.Printf("[DEBUG] session(%d).readerLoop: start", pid)
-	defer log.Printf("[DEBUG] session(%d).readerLoop: end", pid)
 
 	bufTmp := make([]byte, 4096)
 	for {
 		n, err := s.ptmx.Read(bufTmp)
 		s.mu.Lock()
 		if err != nil {
-			if !s.closed {
-				log.Printf("[DEBUG] session(%d) read error: %v", pid, err)
-			}
 			s.mu.Unlock()
 			return
 		}
@@ -215,7 +192,6 @@ func (sm *SessionManager) cleanup() {
 	now := time.Now()
 	for id, s := range sm.sessions {
 		if now.Sub(s.lastUse) > 30*time.Minute {
-			log.Printf("[DEBUG] cleanupLoop: session %s expired, closing", id)
 			_ = s.Close()
 			delete(sm.sessions, id)
 		}
@@ -230,7 +206,6 @@ func (sm *SessionManager) Close() error {
 
 	var errs []error
 	for id, s := range sm.sessions {
-		log.Printf("[DEBUG] Close(): closing session %s", id)
 		if err := s.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("session %s close error: %w", id, err))
 		}
@@ -248,11 +223,8 @@ func (sm *SessionManager) GetOrCreate(id string) (*Session, error) {
 	sm.mu.RUnlock()
 	if ok {
 		existing.lastUse = time.Now()
-		log.Printf("[DEBUG] GetOrCreate: reusing session %s", id)
 		return existing, nil
 	}
-
-	log.Printf("[DEBUG] GetOrCreate: creating new session %s", id)
 
 	cmd := exec.Command("bash", "--noprofile", "--norc", "-i")
 	cmd.Env = []string{
@@ -282,7 +254,6 @@ func (sm *SessionManager) GetOrCreate(id string) (*Session, error) {
 	sm.sessions[id] = sess
 	sm.mu.Unlock()
 
-	log.Printf("[DEBUG] GetOrCreate: session %s created successfully", id)
 	return sess, nil
 }
 
@@ -299,7 +270,6 @@ func normalizeNewlines(s string) string {
 }
 
 func (sm *SessionManager) Run(ctx context.Context, in RunInput) (*types.CallToolResult, error) {
-	log.Printf("[DEBUG] Run: session=%s, cmd=%q", in.SessionID, in.Command)
 
 	sess, err := sm.GetOrCreate(in.SessionID)
 	if err != nil {
@@ -323,18 +293,13 @@ func (sm *SessionManager) Run(ctx context.Context, in RunInput) (*types.CallTool
 
 	rawOut, err2 := sess.readUntilMarkerInBuffer(ctxWait, startOffset)
 	if err2 != nil && err2 != context.DeadlineExceeded && err2 != context.Canceled && err2 != io.EOF {
-		log.Printf("[DEBUG] Run: readUntilMarkerInBuffer error: %v (partial=%q)", err2, rawOut)
 		return nil, err2
 	}
-
-	log.Printf("[DEBUG] Run: rawOutput =>\n%q", rawOut)
 
 	// **Convert CRLF => LF** to pass "MultiLineOutput" test
 	norm := normalizeNewlines(rawOut)
 	filtered := filterOutCommandLines(norm, in.Command)
 	final := strings.TrimSpace(filtered)
-
-	log.Printf("[DEBUG] Run: final =>\n%q", final)
 
 	return &types.CallToolResult{
 		Content: []interface{}{
@@ -345,7 +310,6 @@ func (sm *SessionManager) Run(ctx context.Context, in RunInput) (*types.CallTool
 }
 
 func (sm *SessionManager) RunScreen(ctx context.Context, in RunScreenInput) (*types.CallToolResult, error) {
-	log.Printf("[DEBUG] RunScreen: session=%s, cmd=%q", in.SessionID, in.Command)
 
 	sess, err := sm.GetOrCreate(in.SessionID)
 	if err != nil {
@@ -382,7 +346,6 @@ func (sm *SessionManager) RunScreen(ctx context.Context, in RunScreenInput) (*ty
 
 	// also CRLF->LF for runScreen
 	outChunk = normalizeNewlines(outChunk)
-	log.Printf("[DEBUG] RunScreen: returning chunk =>\n%q", outChunk)
 
 	return &types.CallToolResult{
 		Content: []interface{}{
