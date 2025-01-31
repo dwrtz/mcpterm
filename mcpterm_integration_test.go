@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dwrtz/mcp-go/pkg/logger"
 	"github.com/dwrtz/mcp-go/pkg/mcp/client"
 )
 
@@ -131,8 +130,6 @@ func TestMCPTerm_MultiLineOutput(t *testing.T) {
 	if err := cl.Initialize(ctx); err != nil {
 		t.Fatalf("Client initialization failed: %v", err)
 	}
-	lg := logger.NewStderrLogger("MCPTERM-TEST")
-	lg.Logf("Initialized successfully")
 
 	args := map[string]interface{}{
 		"command":   "echo 'line1' && echo 'line2'",

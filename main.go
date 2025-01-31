@@ -358,7 +358,11 @@ func (sm *SessionManager) RunScreen(ctx context.Context, in RunScreenInput) (*ty
 // main()
 // ---------------------------------------------------------------------
 func main() {
-	lg := logger.NewStderrLogger("MCPTERM-SERVER")
+	lg, err := logger.NewFileLogger("/tmp/mcpterm.log", "MCPTERM-SERVER")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
+		os.Exit(1)
+	}
 
 	sm := NewSessionManager()
 
@@ -379,10 +383,13 @@ func main() {
 	)
 
 	ctx := context.Background()
+	lg.Logf("Starting server...")
 	if err := srv.Start(ctx); err != nil {
 		lg.Logf("Server start error: %v\n", err)
 		os.Exit(1)
 	}
+	lg.Logf("Server started")
 
-	select {}
+	<-ctx.Done()
+	lg.Logf("Exiting...")
 }
