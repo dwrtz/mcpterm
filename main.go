@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -32,11 +33,13 @@ type RunInput struct {
 type RunScreenInput struct {
 	Command   string `json:"command" jsonschema:"type=string,description=The command to run,required"`
 	SessionID string `json:"sessionId" jsonschema:"type=string,description=The session ID to run the command in,required"`
+	RawOutput bool   `json:"rawOutput,omitempty" jsonschema:"type=boolean,description=If true, include ANSI escape sequences"`
 }
 
 // ---------------------------------------------------------------------
 // Utility: filterOutCommandLines
 // ---------------------------------------------------------------------
+// filterOutCommandLines removes the command from output
 func filterOutCommandLines(output, cmd string) string {
 	cmdTrim := strings.TrimSpace(cmd)
 	lines := strings.Split(output, "\n")
@@ -50,6 +53,49 @@ func filterOutCommandLines(output, cmd string) string {
 	return strings.Join(kept, "\n")
 }
 
+// processControlSequences handles common control character notations
+func processControlSequences(input string) string {
+	replacements := map[string]string{
+		"^X": "\x18", // Ctrl+X
+		"^O": "\x0F", // Ctrl+O
+		"^J": "\x0A", // Enter
+		"^C": "\x03", // Ctrl+C
+		"^D": "\x04", // Ctrl+D
+		"^Z": "\x1A", // Ctrl+Z
+		"^[": "\x1B", // Escape
+		"^H": "\x08", // Backspace
+		"^M": "\x0D", // Carriage return
+		"^L": "\x0C", // Form feed
+		"^G": "\x07", // Bell
+		"^U": "\x15", // Clear line
+		"^W": "\x17", // Delete word
+		"^Y": "\x19", // Paste from kill buffer
+		"^V": "\x16", // Literal input
+		"^K": "\x0B", // Kill line
+		"^E": "\x05", // End of line
+		"^A": "\x01", // Beginning of line
+	}
+
+	result := input
+	for notation, ctrl := range replacements {
+		result = strings.ReplaceAll(result, notation, ctrl)
+	}
+	return result
+}
+
+// filterAnsiSequences removes ANSI escape sequences from the output
+func filterAnsiSequences(input string) string {
+	ansiRegex := regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`)
+	return ansiRegex.ReplaceAllString(input, "")
+}
+
+// normalizeNewlines replaces \r\n => \n, then remove extra \r, then trim
+func normalizeNewlines(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return s
+}
+
 // ---------------------------------------------------------------------
 // Session => background reading from PTY
 // ---------------------------------------------------------------------
@@ -61,6 +107,8 @@ type Session struct {
 	buf     bytes.Buffer
 	closed  bool
 	lastUse time.Time
+	debug   bool
+	logger  *logger.FileLogger
 }
 
 func (s *Session) Close() error {
@@ -94,18 +142,25 @@ func (s *Session) Close() error {
 	return nil
 }
 
+func (s *Session) logDebug(format string, args ...interface{}) {
+	if s.debug {
+		(*s.logger).Logf(format, args...)
+	}
+}
+
 // Continuously read from the PTY, appending to s.buf
 func (s *Session) readerLoop() {
-
 	bufTmp := make([]byte, 4096)
 	for {
 		n, err := s.ptmx.Read(bufTmp)
 		s.mu.Lock()
 		if err != nil {
+			s.logDebug("Read error: %v", err)
 			s.mu.Unlock()
 			return
 		}
 		if n > 0 {
+			s.logDebug("Read %d bytes: %q", n, bufTmp[:n])
 			s.buf.Write(bufTmp[:n])
 			s.cond.Broadcast()
 		}
@@ -160,12 +215,14 @@ type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	stopChan chan struct{}
+	logger   *logger.FileLogger
 }
 
-func NewSessionManager() *SessionManager {
+func NewSessionManager(logger *logger.FileLogger) *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
 		stopChan: make(chan struct{}),
+		logger:   logger,
 	}
 	go sm.cleanupLoop()
 	return sm
@@ -228,20 +285,34 @@ func (sm *SessionManager) GetOrCreate(id string) (*Session, error) {
 	cmd := exec.Command("bash", "--noprofile", "--norc", "-i")
 	cmd.Env = []string{
 		"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
-		"TERM=xterm",
+		"TERM=xterm-256color",
+		"LANG=en_US.UTF-8",
 	}
+
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("pty.Start error: %w", err)
 	}
 
-	// Turn off echo + blank prompt
-	_, _ = ptmx.Write([]byte("unset PROMPT_COMMAND; PS1=''; stty -echo\n"))
+	// Comprehensive terminal setup
+	setupCommands := []string{
+		"unset PROMPT_COMMAND",
+		"PS1=''",
+		"stty -echo",
+		"stty rows 24 cols 80",
+		"stty -isig",   // Disable signal handling
+		"stty -icanon", // Disable canonical mode
+		"export TERM=xterm-256color",
+	}
+	setupScript := strings.Join(setupCommands, "; ") + "\n"
+	_, _ = ptmx.Write([]byte(setupScript))
 
 	sess := &Session{
 		ptmx:    ptmx,
 		cmd:     cmd,
 		lastUse: time.Now(),
+		debug:   false,     // Set to true for debugging
+		logger:  sm.logger, // Add logger from SessionManager
 	}
 	sess.cond = sync.NewCond(&sess.mu)
 	go sess.readerLoop()
@@ -260,13 +331,6 @@ func (sm *SessionManager) GetOrCreate(id string) (*Session, error) {
 // Tools => Run / RunScreen
 //   We add CRLF->LF normalization so multi-line output test passes
 // ---------------------------------------------------------------------
-
-// normalizeNewlines => replace \r\n => \n, then remove extra \r, then trim
-func normalizeNewlines(s string) string {
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	return s
-}
 
 func (sm *SessionManager) Run(ctx context.Context, in RunInput) (*types.CallToolResult, error) {
 
@@ -309,7 +373,6 @@ func (sm *SessionManager) Run(ctx context.Context, in RunInput) (*types.CallTool
 }
 
 func (sm *SessionManager) RunScreen(ctx context.Context, in RunScreenInput) (*types.CallToolResult, error) {
-
 	sess, err := sm.GetOrCreate(in.SessionID)
 	if err != nil {
 		return nil, err
@@ -320,17 +383,22 @@ func (sm *SessionManager) RunScreen(ctx context.Context, in RunScreenInput) (*ty
 	startOffset := len(sess.buf.Bytes())
 	sess.mu.Unlock()
 
-	// convert \n => \r
-	data := strings.ReplaceAll(in.Command, "\n", "\r")
+	// Process input for control characters
+	data := processControlSequences(in.Command)
+
+	// Handle newlines
+	data = strings.ReplaceAll(data, "\n", "\r")
 	if !strings.HasSuffix(data, "\r") {
 		data += "\r"
 	}
+
 	if _, werr := sess.ptmx.Write([]byte(data)); werr != nil {
 		return nil, werr
 	}
 
+	// Allow more time for TUI apps to render
 	select {
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(250 * time.Millisecond):
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -343,8 +411,11 @@ func (sm *SessionManager) RunScreen(ctx context.Context, in RunScreenInput) (*ty
 	}
 	sess.mu.Unlock()
 
-	// also CRLF->LF for runScreen
+	// Process output
 	outChunk = normalizeNewlines(outChunk)
+	if !in.RawOutput {
+		outChunk = filterAnsiSequences(outChunk)
+	}
 
 	return &types.CallToolResult{
 		Content: []interface{}{
@@ -364,7 +435,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	sm := NewSessionManager()
+	sm := NewSessionManager(lg) // Pass logger to SessionManager
 
 	runTool := types.NewTool(
 		"run",
