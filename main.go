@@ -25,13 +25,13 @@ const cmdMarker = "RUNTOOL_DONE_MARKER"
 // Test tool request structs
 // ---------------------------------------------------------------------
 type RunInput struct {
-	Command   string `json:"command"`
-	SessionID string `json:"sessionId"`
+	Command   string `json:"command" jsonschema:"type=string,description=The command to run,required"`
+	SessionID string `json:"sessionId" jsonschema:"type=string,description=The session ID to run the command in,required"`
 }
 
 type RunScreenInput struct {
-	Command   string `json:"command"`
-	SessionID string `json:"sessionId"`
+	Command   string `json:"command" jsonschema:"type=string,description=The command to run,required"`
+	SessionID string `json:"sessionId" jsonschema:"type=string,description=The session ID to run the command in,required"`
 }
 
 // ---------------------------------------------------------------------
@@ -366,12 +366,12 @@ func main() {
 
 	sm := NewSessionManager()
 
-	runTool := types.NewTool[RunInput](
+	runTool := types.NewTool(
 		"run",
 		"Execute a command in the same bash session.",
 		sm.Run,
 	)
-	runScreenTool := types.NewTool[RunScreenInput](
+	runScreenTool := types.NewTool(
 		"runScreen",
 		"Send input to the bash session, read partial output. Useful for TUI apps.",
 		sm.RunScreen,
