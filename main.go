@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -456,14 +458,30 @@ func main() {
 		server.WithResources([]types.Resource{}, []types.ResourceTemplate{}), // no resources
 	)
 
-	ctx := context.Background()
+	// Create a context that can be canceled when the server is stopped
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	lg.Logf("Starting server...")
 	if err := srv.Start(ctx); err != nil {
-		lg.Logf("Server start error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Server start error: %v\n", err)
 		os.Exit(1)
 	}
 	lg.Logf("Server started")
 
-	<-ctx.Done()
+	// Set up OS signal handling for graceful shutdown (e.g. Ctrl+C)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// Wait until either a termination signal is received or the transport is closed.
+	select {
+	case sig := <-sigCh:
+		fmt.Printf("Received signal %v. Shutting down...\n", sig)
+	case <-srv.Done():
+		fmt.Println("Client disconnected. Shutting down server...")
+	case <-ctx.Done():
+		fmt.Println("Context canceled. Shutting down server...")
+	}
+
 	lg.Logf("Exiting...")
 }
