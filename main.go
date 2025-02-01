@@ -74,6 +74,7 @@ func processControlSequences(input string) string {
 		"^K": "\x0B", // Kill line
 		"^E": "\x05", // End of line
 		"^A": "\x01", // Beginning of line
+		"^I": "\x09", // Tab
 	}
 
 	result := input
@@ -108,7 +109,7 @@ type Session struct {
 	closed  bool
 	lastUse time.Time
 	debug   bool
-	logger  *logger.FileLogger
+	logger  logger.Logger
 }
 
 func (s *Session) Close() error {
@@ -144,7 +145,7 @@ func (s *Session) Close() error {
 
 func (s *Session) logDebug(format string, args ...interface{}) {
 	if s.debug {
-		(*s.logger).Logf(format, args...)
+		s.logger.Logf(format, args...)
 	}
 }
 
@@ -215,10 +216,10 @@ type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	stopChan chan struct{}
-	logger   *logger.FileLogger
+	logger   logger.Logger
 }
 
-func NewSessionManager(logger *logger.FileLogger) *SessionManager {
+func NewSessionManager(logger logger.Logger) *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
 		stopChan: make(chan struct{}),
@@ -435,7 +436,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	sm := NewSessionManager(lg) // Pass logger to SessionManager
+	sm := NewSessionManager(lg)
 
 	runTool := types.NewTool(
 		"run",
@@ -451,6 +452,8 @@ func main() {
 	srv := server.NewDefaultServer(
 		server.WithLogger(lg),
 		server.WithTools(runTool, runScreenTool),
+		server.WithPrompts([]types.Prompt{}),                                 // no prompts
+		server.WithResources([]types.Resource{}, []types.ResourceTemplate{}), // no resources
 	)
 
 	ctx := context.Background()

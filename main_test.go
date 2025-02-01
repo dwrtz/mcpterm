@@ -8,12 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dwrtz/mcp-go/pkg/logger"
 	"github.com/dwrtz/mcp-go/pkg/types"
 )
 
 func TestSessionManager(t *testing.T) {
+
+	lg := logger.NewStderrLogger("[TEST]")
 	// Create session manager and ensure cleanup
-	sm := NewSessionManager()
+	sm := NewSessionManager(lg)
 	t.Cleanup(func() {
 		if err := sm.Close(); err != nil {
 			t.Errorf("Failed to close session manager: %v", err)
@@ -119,7 +122,8 @@ func TestSessionManager(t *testing.T) {
 }
 
 func TestRunTool(t *testing.T) {
-	sm := NewSessionManager()
+	lg := logger.NewStderrLogger("[TEST]")
+	sm := NewSessionManager(lg)
 	defer sm.Close()
 	ctx := context.Background()
 
@@ -230,7 +234,8 @@ func TestRunTool(t *testing.T) {
 }
 
 func TestRunScreenTool(t *testing.T) {
-	sm := NewSessionManager()
+	lg := logger.NewStderrLogger("[TEST]")
+	sm := NewSessionManager(lg)
 	defer sm.Close()
 	ctx := context.Background()
 
@@ -285,7 +290,8 @@ func TestRunScreenTool(t *testing.T) {
 }
 
 func TestConcurrentSessions(t *testing.T) {
-	sm := NewSessionManager()
+	lg := logger.NewStderrLogger("[TEST]")
+	sm := NewSessionManager(lg)
 	defer sm.Close()
 
 	// Create several concurrent sessions
