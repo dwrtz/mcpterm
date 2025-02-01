@@ -284,7 +284,7 @@ func (sm *SessionManager) GetOrCreate(id string) (*Session, error) {
 
 	cmd := exec.Command("bash", "--noprofile", "--norc", "-i")
 	cmd.Env = []string{
-		"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+		"PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin:/usr/local/go/bin",
 		"TERM=xterm-256color",
 		"LANG=en_US.UTF-8",
 	}
