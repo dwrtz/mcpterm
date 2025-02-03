@@ -24,7 +24,7 @@ sudo mv bin/mcpterm /usr/local/bin/mcpterm
 
 ### Add to Claude Desktop
 
-Edit your `claude_desktop_config.json` (on Mac it's in `~/Library/Application Support/Claude/config.json`):
+Edit your `claude_desktop_config.json` (on Mac it's in `~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
