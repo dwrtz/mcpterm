@@ -4,10 +4,8 @@ go 1.22.3
 
 require (
 	github.com/creack/pty v1.1.24
-	github.com/dwrtz/mcp-go v0.1.0
+	github.com/dwrtz/mcp-go v0.2.0
 )
-
-replace github.com/dwrtz/mcp-go => /Users/dwurtz/proj/mcp-go
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
